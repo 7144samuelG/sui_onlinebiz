@@ -51,147 +51,143 @@ public struct AmountWithdrawn has drop,copy{
 
  //functions
 
- //function to create market
- public entry fun createmarket(name:String,ctx:&mut TxContext): String{
-
-    let id=object::new(ctx);
-   
+ // Function to create market
+public entry fun createmarket(name: String, ctx: &mut TxContext): String {
+    let id = object::new(ctx);
     let balance = balance::zero<SUI>();
-    let marketid=object::uid_to_inner(&id);
-    let newmarket=Marketplace{ 
-            id, 
-            name,
-            items:vector::empty(),
-            balance
+
+    let newmarket = Marketplace { 
+        id, 
+        name,
+        items: vector::empty(),
+        balance,
+        owner: tx_context::sender(ctx), // Store the owner's address
     };
 
-     transfer::transfer(AdminCap {
+    transfer::transfer(AdminCap {
         id: object::new(ctx),
-        marketid,
+        marketid: object::uid_to_inner(&id),
     }, tx_context::sender(ctx));
 
-
-      transfer::share_object(newmarket);
-    event::emit(MarketCreated{
-       nameofmarket:name
+    transfer::share_object(newmarket);
+    event::emit(MarketCreated {
+        nameofmarket: name,
     });
 
-   name
+    name
+}
 
- }
-
- //function to  add products to the marketplace
+ // Function to add products to the marketplace
 public entry fun additem(
-        marketplace: &mut Marketplace,
-        name:String,
-        price:u64,
-        description:String,
-        ctx: &mut TxContext
-    ) {
-        let itemid=marketplace.items.length()+1;
-        
-        let newitems = Items {
-            id:object::new(ctx),
-            itemid,
-            name,
-            description,
-            price,
-            sold:false,
-            owner: tx_context::sender(ctx),
-        };
+    marketplace: &mut Marketplace,
+    name: String,
+    price: u64,
+    description: String,
+    ctx: &mut TxContext
+) {
+    let itemid = object::new(ctx); // Unique ID for the item
+    let newitems = Items {
+        id: itemid,
+        itemid: object::uid_to_inner(&itemid), // Assign a unique ID
+        name,
+        description,
+        price,
+        sold: false,
+        owner: tx_context::sender(ctx),
+    };
 
-        marketplace.items.push_back(newitems);
-       
-    }
- public entry fun get_item(marketplace: &Marketplace,item_id: u64):(u64, String, String){
-    assert!(item_id <= marketplace.items.length(),  EitemNotAvailable);
+    marketplace.items.push_back(newitems);
+}
+
+ // Get item details
+public entry fun get_item(marketplace: &Marketplace, item_id: u64) -> (u64, String, String) {
+    assert!(item_id < marketplace.items.length(), EitemNotAvailable); // Change to '<' to avoid out-of-bounds
     let item = &marketplace.items[item_id];
 
-    //check if items is sold
-    assert!(item.sold==false, EitemNotAvailable);
+    // Check if item is sold
+    assert!(!item.sold, EitemNotAvailable);
     // Return a copy of the item
-    (item.price,item.name,item.description)
-
-  }
+    (item.price, item.name, item.description)
+}
+    
 
    //update details of an item
-
-   //update price of item
-   public entry fun update_item_price(marketplace:&mut Marketplace,item_id:u64,newprice:u64){
-      assert!(item_id <= marketplace.items.length(),  EitemNotAvailable);
+   // Update price of item
+public entry fun update_item_price(marketplace: &mut Marketplace, item_id: u64, newprice: u64, ctx: &mut TxContext) {
+    assert!(item_id < marketplace.items.length(), EitemNotAvailable); // Change to '<' to avoid out-of-bounds
      
-     let item=&mut marketplace.items[item_id];
-     item.price=newprice;
+    let item = &mut marketplace.items[item_id];
+    assert!(item.owner == tx_context::sender(ctx), ENotOwner); // Ensure the caller is the owner
+    item.price = newprice;
+}
 
-   }
-
-   //update decription of  item
-  public entry fun update_item_description(marketplace:&mut Marketplace,item_id:u64,description:String){
-      assert!(item_id <= marketplace.items.length(),  EitemNotAvailable);
+  // Update description of item
+public entry fun update_item_description(marketplace: &mut Marketplace, item_id: u64, description: String, ctx: &mut TxContext) {
+    assert!(item_id < marketplace.items.length(), EitemNotAvailable); // Change to '<' to avoid out-of-bounds
      
-     let item=&mut marketplace.items[item_id];
-     item.description=description;
+    let item = &mut marketplace.items[item_id];
+    assert!(item.owner == tx_context::sender(ctx), ENotOwner); // Ensure the caller is the owner
+    item.description = description;
+}
 
-   }
-
-//unlist item from marketplace by marking it as sold
-
+// Unlist item from marketplace by marking it as sold
 public entry fun delist_item(
-        marketplace: &mut Marketplace,
-        item_id: u64
-    ){
-    
-       assert!(item_id <= marketplace.items.length(),  EitemNotAvailable);
+    marketplace: &mut Marketplace,
+    item_id: u64,
+    ctx: &mut TxContext
+) {
+    assert!(item_id < marketplace.items.length(), EitemNotAvailable); // Change to '<' to avoid out-of-bounds
      
-     let item=&mut marketplace.items[item_id];
-     item.sold=true;
-
-
-    }
+    let item = &mut marketplace.items[item_id];
+    assert!(item.owner == tx_context::sender(ctx), ENotOwner); // Ensure the caller is the owner
+    item.sold = true;
+}
     
 //buy item
 
+// Buy item
 public entry fun buy_item(
-        marketplace: &mut Marketplace,
-        item_id: u64,
-        amount: Coin<SUI>,
-    ){
+    marketplace: &mut Marketplace,
+    item_id: u64,
+    amount: Coin<SUI>,
+    ctx: &mut TxContext
+) {
+    // Check if item is available
+    assert!(item_id < marketplace.items.length(), EitemNotAvailable); // Change to '<' to avoid out-of-bounds
 
-//check if item is avaialble
+    // Check if item is already sold
+    assert!(!marketplace.items[item_id].sold, EitemNotAvailable);
 
-assert!(item_id <= marketplace.items.length(),  EitemNotAvailable);
+    // Get price
+    let item = &marketplace.items[item_id];
 
-//check if item is already sold
-assert!(marketplace.items[item_id].sold==false,EitemNotAvailable);
-      //get price
-      let item=&marketplace.items[item_id];
-    //ensure amount is greater or equals to price of item
-      assert!(coin::value(&amount)== item.price, ErrorInsufficientamount);
- 
-   let coin_balance = coin::into_balance(amount);
-     // add the amount to the marketplace balance
-    //  let paid = split(amount, item.price, ctx);  
+    // Ensure the amount is greater than or equal to the price of the item
+    assert!(coin::value(&amount) >= item.price, ErrorInsufficientamount);
 
-    //   put(&mut marketplace.balance, paid); 
+    let coin_balance = coin::into_balance(amount);
     balance::join(&mut marketplace.balance, coin_balance);
+
+    // Refund any excess amount if applicable
+    if coin::value(&amount) > item.price {
+        let excess_amount = coin::take(&amount, coin::value(&amount) - item.price, ctx);
+        transfer::public_transfer(excess_amount, tx_context::sender(ctx));
     }
+}
 
-// //owner withdraw profits
-public entry fun withdraw_funds(user_cap:&AdminCap, marketplace: &mut Marketplace, ctx: &mut TxContext) {
-
-    // verify its the owner of article
-    assert!(object::uid_as_inner(&marketplace.id)==&user_cap.marketid, ENotOwner);
-      
-   
-
-     let amount: u64 = balance::value(&marketplace.balance);
+// Owner withdraw profits
+public entry fun withdraw_funds(user_cap: &AdminCap, marketplace: &mut Marketplace, ctx: &mut TxContext) {
+    // Verify it's the owner of the marketplace
+    assert!(object::uid_as_inner(&marketplace.id) == &user_cap.marketid, ENotOwner);
+    
+    let amount: u64 = balance::value(&marketplace.balance);
+    assert!(amount > 0, EInsufficientamount); // Check if there's a balance to withdraw
 
     let amountavailable: Coin<SUI> = coin::take(&mut marketplace.balance, amount, ctx);
-
     transfer::public_transfer(amountavailable, tx_context::sender(ctx));
-    event::emit( AmountWithdrawn{
-        recipient:tx_context::sender(ctx),
-        amount:amount
+    
+    event::emit(AmountWithdrawn {
+        recipient: tx_context::sender(ctx),
+        amount: amount,
     });
 }
 
