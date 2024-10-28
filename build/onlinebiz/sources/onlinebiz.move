@@ -18,6 +18,7 @@ module onlinebiz::onlinebiz {
       id:UID,
       name:String,
       items:vector<Items>,
+      productscount:u64,
       balance:Balance<SUI>
    
    }
@@ -55,11 +56,12 @@ public struct AmountWithdrawn has drop,copy{
  public entry fun createmarket(name:String,ctx:&mut TxContext): String{
 
     let id=object::new(ctx);
-   
+   let productscount:u64=0;
     let balance = balance::zero<SUI>();
     let marketid=object::uid_to_inner(&id);
     let newmarket=Marketplace{ 
             id, 
+            productscount:productscount,
             name,
             items:vector::empty(),
             balance
@@ -82,12 +84,17 @@ public struct AmountWithdrawn has drop,copy{
 
  //function to  add products to the marketplace
 public entry fun additem(
+   owner:&AdminCap,
         marketplace: &mut Marketplace,
         name:String,
         price:u64,
         description:String,
         ctx: &mut TxContext
     ) {
+
+      //verify to make its only the owner of the market can add item
+
+      assert!(&owner.marketid==object::uid_to_inner(&marketplace.id),ENotOwner);
         let itemid=marketplace.items.length()+1;
         
         let newitems = Items {
@@ -101,23 +108,17 @@ public entry fun additem(
         };
 
         marketplace.items.push_back(newitems);
+        marketplace.productscount=marketplace.productscount+1;
        
     }
- public entry fun get_item(marketplace: &Marketplace,item_id: u64):(u64, String, String){
-    assert!(item_id <= marketplace.items.length(),  EitemNotAvailable);
-    let item = &marketplace.items[item_id];
 
-    //check if items is sold
-    assert!(item.sold==false, EitemNotAvailable);
-    // Return a copy of the item
-    (item.price,item.name,item.description)
-
-  }
-
-   //update details of an item
 
    //update price of item
-   public entry fun update_item_price(marketplace:&mut Marketplace,item_id:u64,newprice:u64){
+   public entry fun update_item_price(marketplace:&mut Marketplace,owner:&AdminCap,item_id:u64,newprice:u64){
+
+      //make sure its the admin perfroming the operation
+      assert!(&owner.marketid==object::uid_to_inner(&marketplace.id),ENotOwner);
+      //make sure the item actually exists
       assert!(item_id <= marketplace.items.length(),  EitemNotAvailable);
      
      let item=&mut marketplace.items[item_id];
@@ -126,9 +127,12 @@ public entry fun additem(
    }
 
    //update decription of  item
-  public entry fun update_item_description(marketplace:&mut Marketplace,item_id:u64,description:String){
+  public entry fun update_item_description(marketplace:&mut Marketplace,owner:&AdminCap,item_id:u64,description:String){
+   //make sure item is available
       assert!(item_id <= marketplace.items.length(),  EitemNotAvailable);
      
+      //make sure its the admin perfroming the operation
+      assert!(&owner.marketid==object::uid_to_inner(&marketplace.id),ENotOwner);
      let item=&mut marketplace.items[item_id];
      item.description=description;
 
@@ -138,9 +142,13 @@ public entry fun additem(
 
 public entry fun delist_item(
         marketplace: &mut Marketplace,
+        owner:&AdminCap,
         item_id: u64
     ){
-    
+       //make sure its the admin perfroming the operation
+      assert!(&owner.marketid==object::uid_to_inner(&marketplace.id),ENotOwner);
+
+      //check if item is available
        assert!(item_id <= marketplace.items.length(),  EitemNotAvailable);
      
      let item=&mut marketplace.items[item_id];
