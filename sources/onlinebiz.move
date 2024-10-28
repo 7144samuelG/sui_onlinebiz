@@ -113,6 +113,16 @@ public entry fun additem(
     }
 
 
+
+//get details of an item
+public entry fun getItemDetails(market:&mut Marketplace,itemid:u64):(u64,String,String,u64,bool){
+
+   //check if item is availabel
+   assert!(itemid<=market.items.length(),EitemNotAvailable);
+
+   let item=&market.items[itemid];
+   (item.itemid,item.name,item.description,item.price,item.sold)
+}
    //update price of item
    public entry fun update_item_price(marketplace:&mut Marketplace,owner:&AdminCap,item_id:u64,newprice:u64){
 
