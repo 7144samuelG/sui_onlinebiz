@@ -95,7 +95,7 @@ public entry fun additem(
       //verify to make its only the owner of the market can add item
 
       assert!(&owner.marketid==object::uid_to_inner(&marketplace.id),ENotOwner);
-        let itemid=marketplace.items.length()+1;
+        let itemid=marketplace.items.length();
         
         let newitems = Items {
             id:object::new(ctx),
