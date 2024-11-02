@@ -1,4 +1,3 @@
-
 module onlinebiz::onlinebiz {
     use sui::balance::{Balance, Self};
     use sui::coin::{Coin, Self};
@@ -6,212 +5,226 @@ module onlinebiz::onlinebiz {
     use sui::event;
     use sui::sui::SUI;
 
+    // Errors
+    enum MarketplaceError {
+        NotOwner,
+        ItemNotAvailable,
+        InsufficientAmount,
+    }
 
-    //errors
-    const ENotOwner:u64=0;
-    const  EitemNotAvailable:u64=2;
-    const ErrorInsufficientamount:u64=3;
+    // Define data types
+    public struct Marketplace has key, store {
+        id: UID,
+        name: String,
+        items: vector<Items>,
+        productscount: u64,
+        balance: Balance<SUI>
+    }
 
-    //define data types
-    public struct Marketplace  has key,store{
-      
-      id:UID,
-      name:String,
-      items:vector<Items>,
-      productscount:u64,
-      balance:Balance<SUI>
-   
-   }
+    public struct Items has key, store {
+        id: UID,
+        itemid: u64,
+        name: String,
+        description: String,
+        price: u64,
+        sold: bool,
+        owner: address
+    }
 
- public struct Items has key,store{
-    id: UID,
-    itemid:u64,
-    name:String,
-    description:String,
-    price:u64,
-    sold:bool,
-    owner:address
- }
+    public struct AdminCap has key {
+        id: UID,
+        marketid: ID
+    }
 
- public struct AdminCap has key{
-    id:UID,
-    marketid:ID
- }
+    // Events
+    public struct MarketCreated has drop, copy {
+        nameofmarket: String
+    }
 
- //events
+    public struct AmountWithdrawn has drop, copy {
+        recipient: address,
+        amount: u64
+    }
 
- public struct MarketCreated has drop,copy{
-    nameofmarket:String
- }
+    // Functions
 
-public struct AmountWithdrawn has drop,copy{
-     recipient:address,
-        amount:u64
-}
-
-
- //functions
-
- //function to create market
- public entry fun createmarket(name:String,ctx:&mut TxContext): String{
-
-    let id=object::new(ctx);
-   let productscount:u64=0;
-    let balance = balance::zero<SUI>();
-    let marketid=object::uid_to_inner(&id);
-    let newmarket=Marketplace{ 
-            id, 
-            productscount:productscount,
-            name,
-            items:vector::empty(),
-            balance
-    };
-
-     transfer::transfer(AdminCap {
-        id: object::new(ctx),
-        marketid,
-    }, tx_context::sender(ctx));
-
-
-      transfer::share_object(newmarket);
-    event::emit(MarketCreated{
-       nameofmarket:name
-    });
-
-   name
-
- }
-
- //function to  add products to the marketplace
-public entry fun additem(
-   owner:&AdminCap,
-        marketplace: &mut Marketplace,
-        name:String,
-        price:u64,
-        description:String,
-        ctx: &mut TxContext
-    ) {
-
-      //verify to make its only the owner of the market can add item
-
-      assert!(&owner.marketid==object::uid_to_inner(&marketplace.id),ENotOwner);
-        let itemid=marketplace.items.length();
+    // Function to create market
+    public entry fun create_market(name: String, ctx: &mut TxContext) -> UID {
+        let id = object::new(ctx);
+        let productscount: u64 = 0;
+        let balance = balance::zero<SUI>();
         
-        let newitems = Items {
-            id:object::new(ctx),
+        let newmarket = Marketplace { 
+            id, 
+            productscount,
+            name,
+            items: vector::empty(),
+            balance
+        };
+
+        transfer::transfer(AdminCap {
+            id: object::new(ctx),
+            marketid: object::uid_to_inner(&id),
+        }, tx_context::sender(ctx));
+
+        transfer::share_object(newmarket);
+        event::emit(MarketCreated {
+            nameofmarket: name
+        });
+
+        id // Return the market ID
+    }
+
+    // Function to add products to the marketplace
+    public entry fun add_item(
+        owner: &AdminCap,
+        marketplace: &mut Marketplace,
+        name: String,
+        price: u64,
+        description: String,
+        ctx: &mut TxContext
+    ) -> Result<(), MarketplaceError> {
+        // Verify that only the owner of the market can add items
+        if &owner.marketid != object::uid_to_inner(&marketplace.id) {
+            return Err(MarketplaceError::NotOwner);
+        }
+
+        let itemid = marketplace.items.length();
+        let newitem = Items {
+            id: object::new(ctx),
             itemid,
             name,
             description,
             price,
-            sold:false,
+            sold: false,
             owner: tx_context::sender(ctx),
         };
 
-        marketplace.items.push_back(newitems);
-        marketplace.productscount=marketplace.productscount+1;
-       
+        marketplace.items.push_back(newitem);
+        marketplace.productscount += 1;
+
+        Ok(())
     }
 
+    // Get details of an item
+    public entry fun get_item_details(market: &mut Marketplace, itemid: u64) -> Result<(u64, String, String, u64, bool), MarketplaceError> {
+        // Check if item is available
+        if itemid >= market.items.length() {
+            return Err(MarketplaceError::ItemNotAvailable);
+        }
 
+        let item = &market.items[itemid];
+        Ok((item.itemid, item.name, item.description, item.price, item.sold))
+    }
 
-//get details of an item
-public entry fun getItemDetails(market:&mut Marketplace,itemid:u64):(u64,String,String,u64,bool){
+    // Update price of item
+    public entry fun update_item_price(marketplace: &mut Marketplace, owner: &AdminCap, item_id: u64, newprice: u64) -> Result<(), MarketplaceError> {
+        // Make sure it's the admin performing the operation
+        if &owner.marketid != object::uid_to_inner(&marketplace.id) {
+            return Err(MarketplaceError::NotOwner);
+        }
 
-   //check if item is availabel
-   assert!(itemid<=market.items.length(),EitemNotAvailable);
+        // Make sure the item actually exists
+        if item_id >= marketplace.items.length() {
+            return Err(MarketplaceError::ItemNotAvailable);
+        }
 
-   let item=&market.items[itemid];
-   (item.itemid,item.name,item.description,item.price,item.sold)
-}
-   //update price of item
-   public entry fun update_item_price(marketplace:&mut Marketplace,owner:&AdminCap,item_id:u64,newprice:u64){
+        let item = &mut marketplace.items[item_id];
+        item.price = newprice;
 
-      //make sure its the admin perfroming the operation
-      assert!(&owner.marketid==object::uid_to_inner(&marketplace.id),ENotOwner);
-      //make sure the item actually exists
-      assert!(item_id <= marketplace.items.length(),  EitemNotAvailable);
-     
-     let item=&mut marketplace.items[item_id];
-     item.price=newprice;
+        Ok(())
+    }
 
-   }
+    // Update description of item
+    public entry fun update_item_description(marketplace: &mut Marketplace, owner: &AdminCap, item_id: u64, description: String) -> Result<(), MarketplaceError> {
+        // Make sure item is available
+        if item_id >= marketplace.items.length() {
+            return Err(MarketplaceError::ItemNotAvailable);
+        }
 
-   //update decription of  item
-  public entry fun update_item_description(marketplace:&mut Marketplace,owner:&AdminCap,item_id:u64,description:String){
-   //make sure item is available
-      assert!(item_id <= marketplace.items.length(),  EitemNotAvailable);
-     
-      //make sure its the admin perfroming the operation
-      assert!(&owner.marketid==object::uid_to_inner(&marketplace.id),ENotOwner);
-     let item=&mut marketplace.items[item_id];
-     item.description=description;
+        // Make sure it's the admin performing the operation
+        if &owner.marketid != object::uid_to_inner(&marketplace.id) {
+            return Err(MarketplaceError::NotOwner);
+        }
 
-   }
+        let item = &mut marketplace.items[item_id];
+        item.description = description;
 
-//unlist item from marketplace by marking it as sold
+        Ok(())
+    }
 
-public entry fun delist_item(
+    // Unlist item from marketplace by marking it as sold
+    public entry fun delist_item(
         marketplace: &mut Marketplace,
-        owner:&AdminCap,
+        owner: &AdminCap,
         item_id: u64
-    ){
-       //make sure its the admin perfroming the operation
-      assert!(&owner.marketid==object::uid_to_inner(&marketplace.id),ENotOwner);
+    ) -> Result<(), MarketplaceError> {
+        // Make sure it's the admin performing the operation
+        if &owner.marketid != object::uid_to_inner(&marketplace.id) {
+            return Err(MarketplaceError::NotOwner);
+        }
 
-      //check if item is available
-       assert!(item_id <= marketplace.items.length(),  EitemNotAvailable);
-     
-     let item=&mut marketplace.items[item_id];
-     item.sold=true;
+        // Check if item is available
+        if item_id >= marketplace.items.length() {
+            return Err(MarketplaceError::ItemNotAvailable);
+        }
 
+        let item = &mut marketplace.items[item_id];
+        item.sold = true;
 
+        Ok(())
     }
-    
-//buy item
 
-public entry fun buy_item(
+    // Buy item
+    public entry fun buy_item(
         marketplace: &mut Marketplace,
         item_id: u64,
-        amount: Coin<SUI>,
-    ){
+        amount: Coin<SUI>
+    ) -> Result<(), MarketplaceError> {
+        // Check if item is available
+        if item_id >= marketplace.items.length() {
+            return Err(MarketplaceError::ItemNotAvailable);
+        }
 
-//check if item is avaialble
+        // Check if item is already sold
+        if marketplace.items[item_id].sold {
+            return Err(MarketplaceError::ItemNotAvailable);
+        }
 
-assert!(item_id <= marketplace.items.length(),  EitemNotAvailable);
+        // Get price
+        let item = &marketplace.items[item_id];
+        
+        // Ensure the amount is greater than or equal to the price of the item
+        if coin::value(&amount) != item.price {
+            return Err(MarketplaceError::InsufficientAmount);
+        }
 
-//check if item is already sold
-assert!(marketplace.items[item_id].sold==false,EitemNotAvailable);
-      //get price
-      let item=&marketplace.items[item_id];
-    //ensure amount is greater or equals to price of item
-      assert!(coin::value(&amount)== item.price, ErrorInsufficientamount);
- 
-   let coin_balance = coin::into_balance(amount);
-     // add the amount to the marketplace balance
-    //  let paid = split(amount, item.price, ctx);  
+        let coin_balance = coin::into_balance(amount);
+        // Add the amount to the marketplace balance
+        balance::join(&mut marketplace.balance, coin_balance);
 
-    //   put(&mut marketplace.balance, paid); 
-    balance::join(&mut marketplace.balance, coin_balance);
+        Ok(())
     }
 
-// //owner withdraw profits
-public entry fun withdraw_funds(user_cap:&AdminCap, marketplace: &mut Marketplace, ctx: &mut TxContext) {
+    // Owner withdraw profits
+    public entry fun withdraw_funds(user_cap: &AdminCap, marketplace: &mut Marketplace, amount: u64, ctx: &mut TxContext) -> Result<(), MarketplaceError> {
+        // Verify it's the owner of the marketplace
+        if object::uid_as_inner(&marketplace.id) != &user_cap.marketid {
+            return Err(MarketplaceError::NotOwner);
+        }
 
-    // verify its the owner of article
-    assert!(object::uid_as_inner(&marketplace.id)==&user_cap.marketid, ENotOwner);
-      
-   
+        // Verify the requested amount is less than or equal to the balance
+        if amount > balance::value(&marketplace.balance) {
+            return Err(MarketplaceError::InsufficientAmount);
+        }
 
-     let amount: u64 = balance::value(&marketplace.balance);
+        let amount_available: Coin<SUI> = coin::take(&mut marketplace.balance, amount, ctx);
+        transfer::public_transfer(amount_available, tx_context::sender(ctx));
+        event::emit(AmountWithdrawn {
+            recipient: tx_context::sender(ctx),
+            amount
+        });
 
-    let amountavailable: Coin<SUI> = coin::take(&mut marketplace.balance, amount, ctx);
-
-    transfer::public_transfer(amountavailable, tx_context::sender(ctx));
-    event::emit( AmountWithdrawn{
-        recipient:tx_context::sender(ctx),
-        amount:amount
-    });
+        Ok(())
+    }
 }
-
-}
-
